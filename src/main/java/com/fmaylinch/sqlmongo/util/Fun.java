@@ -1,4 +1,4 @@
-package com.fmaylinch.sqlmongo.parser;
+package com.fmaylinch.sqlmongo.util;
 
 import java.util.Collection;
 import java.util.List;

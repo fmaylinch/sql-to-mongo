@@ -1,8 +1,9 @@
 package com.fmaylinch.sqlmongo;
 
 import com.codepoetics.protonpack.StreamUtils;
-import com.fmaylinch.sqlmongo.parser.Fun;
+import com.fmaylinch.sqlmongo.util.Fun;
 import com.fmaylinch.sqlmongo.parser.SqlParser;
+import com.fmaylinch.sqlmongo.util.MongoUtil;
 import com.mongodb.DB;
 import com.mongodb.DBCollection;
 import com.mongodb.DBCursor;

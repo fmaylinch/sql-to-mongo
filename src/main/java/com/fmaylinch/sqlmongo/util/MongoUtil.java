@@ -1,4 +1,4 @@
-package com.fmaylinch.sqlmongo;
+package com.fmaylinch.sqlmongo.util;
 
 import com.mongodb.BasicDBObject;
 import com.mongodb.DB;

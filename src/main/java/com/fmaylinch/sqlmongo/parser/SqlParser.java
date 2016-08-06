@@ -1,6 +1,7 @@
 package com.fmaylinch.sqlmongo.parser;
 
-import com.fmaylinch.sqlmongo.MongoUtil;
+import com.fmaylinch.sqlmongo.util.MongoUtil;
+import com.fmaylinch.sqlmongo.util.Fun;
 import com.mongodb.BasicDBObject;
 import com.mongodb.QueryOperators;
 import org.bson.types.ObjectId;
