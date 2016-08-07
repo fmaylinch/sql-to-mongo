@@ -297,7 +297,7 @@ public class SqlParser {
 		LT("<", QueryOperators.LT),
 		LTE("<=", QueryOperators.LTE),
 		GT(">", QueryOperators.GT),
-		GTE(">", QueryOperators.GTE);
+		GTE(">=", QueryOperators.GTE);
 
 		public final String sqlOperator;
 		public final String mongoOperator;
