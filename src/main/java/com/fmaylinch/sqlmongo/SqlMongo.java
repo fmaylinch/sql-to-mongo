@@ -34,6 +34,23 @@ public class SqlMongo {
 
 	public static void main(String[] args) throws IOException {
 
+		Properties config = setupConfig(args);
+
+		String uri = getRequiredPropertyWithExample(config, "uri",
+				"mongodb://localhost:27017/mydb");
+		String querySql = getRequiredPropertyWithExample(config, "query",
+				"select userEmail from coupons where couponState = 4");
+
+		DB db = MongoUtil.connectToDb(uri);
+
+		SqlParser parser = new SqlParser(querySql, db);
+		parser.parse();
+
+		printOutput(parser, config);
+	}
+
+	private static Properties setupConfig(String[] args)
+	{
 		// Configure defaults
 		Properties config = new Properties();
 		config.setProperty("dateFormat", "yyyy-MM-dd HH:mm:ss");
@@ -56,15 +73,12 @@ public class SqlMongo {
 		padding = Integer.parseInt(config.getProperty("padding"));
 		csvSeparator = config.getProperty("csvSeparator").charAt(0);
 
-		String uri = getRequiredPropertyWithExample(config, "uri",
-				"mongodb://localhost:27017/mydb");
-		String querySql = getRequiredPropertyWithExample(config, "query",
-				"select userEmail from coupons where couponState = 4");
+		return config;
+	}
 
-		DB db = MongoUtil.connectToDb(uri);
-
-		SqlParser parser = new SqlParser(querySql, db);
-		parser.parse();
+	private static void printOutput(SqlParser parser, Properties config) throws IOException
+	{
+		String output = config.getProperty("output");
 
 		if (parser.getFields().isEmpty() && !output.equals("vertical")) {
 			System.err.println("If you retrieve all fields you must use vertical output. Forcing vertical output.");
