@@ -29,6 +29,7 @@ public class SqlMongo {
 	private static DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	private static Pattern optionPattern = Pattern.compile("([a-zA-Z0-9]+)=(.+)");
 	private static int padding;
+	private static String nullValue;
 	private static char csvSeparator;
 
 	public static void main(String[] args) throws IOException {
@@ -36,6 +37,7 @@ public class SqlMongo {
 		// Configure defaults
 		Properties config = new Properties();
 		config.setProperty("dateFormat", "yyyy-MM-dd HH:mm:ss");
+		config.setProperty("nullValue", "");
 		config.setProperty("output", "horizontal"); // horizontal, vertical or directly a csv file name
 		config.setProperty("padding", "40"); // only used for horizontal and vertical output
 		config.setProperty("csvSeparator", ","); // only used for csv output
@@ -49,6 +51,7 @@ public class SqlMongo {
 		overrideConfigFromArgs(args, config);
 
 		dateFormat = new SimpleDateFormat(config.getProperty("dateFormat"));
+		nullValue = config.getProperty("nullValue");
 		String output = config.getProperty("output");
 		padding = Integer.parseInt(config.getProperty("padding"));
 		csvSeparator = config.getProperty("csvSeparator").charAt(0);
@@ -151,7 +154,7 @@ public class SqlMongo {
 	}
 
 	private static String valueToString(Object value) {
-		if (value == null) return "--";
+		if (value == null) return nullValue;
 		if (value instanceof Date) return dateFormat.format(value);
 		return value.toString();
 	}
