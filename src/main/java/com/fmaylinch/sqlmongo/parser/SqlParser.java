@@ -69,12 +69,18 @@ public class SqlParser {
 		tokenizer.setKeywords(new HashSet<>(Arrays.asList("select", "from", "where", "as", "and", "limit")));
 
 		parseSelect();
+
 		parseFrom();
+
 		if (isNextTokenSkipIt(Type.KEYWORD, "where")) {
 			parseWhereConditions();
 		}
 
 		cursor = collection.find(query, select);
+
+		if (isNextTokenSkipIt(Type.KEYWORD, "limit")) {
+			parseLimit();
+		}
 	}
 
 
@@ -86,7 +92,7 @@ public class SqlParser {
 
 		select = MongoUtil.obj();
 
-		if (isNextToken(Type.SYMBOL, "*")) return; // select all fields, so nothing else to do
+		if (isNextTokenSkipIt(Type.SYMBOL, "*")) return; // select all fields, so nothing else to do
 
 		do {
 			parseSelectField();
@@ -124,6 +130,13 @@ public class SqlParser {
 
 		} while (isNextTokenSkipIt(Type.KEYWORD, "and"));
 	}
+
+	private void parseLimit() {
+
+		final Token numberToken = checkAndSkipNextToken(Type.NUMBER);
+		cursor = cursor.limit(Integer.parseInt(numberToken.getString()));
+	}
+
 
 
 	// Piece parsing
@@ -164,12 +177,10 @@ public class SqlParser {
 				switch (token.getString()) {
 					case "Date": return parseDateArgument();
 					case "Id": return parseIdArgument();
-					default: throw new IllegalStateException("Unexpected value: " + token.getString());
 				}
-
-			default:
-				throw new IllegalStateException("Unexpected token in value: " + token.getType() + " " + token.getString());
 		}
+
+		throw new IllegalArgumentException("Unexpected value: " + token);
 	}
 
 	private Date parseDateArgument() {
@@ -188,7 +199,7 @@ public class SqlParser {
 			// We throw below (also if no suitable format is found)
 		}
 
-		throw new IllegalArgumentException("Unsupported date format: " + dateStr
+		throw new IllegalArgumentException("Unsupported date: " + dateStr
 				+ " (available formats: " + Fun.map(dateFormats, f -> f.toPattern()) + ")");
 	}
 
@@ -222,20 +233,20 @@ public class SqlParser {
 
 	/**
 	 * Checks next token and skips it.
-	 * @throws IllegalStateException if next token is not the one expected
+	 * @throws IllegalArgumentException if next token is not the one expected
 	 */
 	private void checkAndSkipNextToken(Type type, String str)
 	{
 		Token token = tokenizer.skipNextToken();
 
 		if (token.getType() != type || !token.getString().equals(str)) {
-			throw new IllegalStateException("Expected " + type + " " + str + " but found " + token.getType() + " " + token.getString());
+			throw new IllegalArgumentException("Expected " + type.name().toLowerCase() + " `" + str + "` but found " + token);
 		}
 	}
 
 	/**
 	 * Returns and skips next token if it's the expected type.
-	 * @throws IllegalStateException if next token is not of the type expected
+	 * @throws IllegalArgumentException if next token is not of the type expected
 	 */
 	private Token checkAndSkipNextToken(Type type)
 	{
@@ -244,7 +255,7 @@ public class SqlParser {
 		if (token.getType() == type) {
 			return token;
 		} else {
-			throw new IllegalStateException("Expected a " + type + " but found " + token.getType() + " " + token.getString());
+			throw new IllegalArgumentException("Expected a " + type.name().toLowerCase() + " but found " + token);
 		}
 	}
 

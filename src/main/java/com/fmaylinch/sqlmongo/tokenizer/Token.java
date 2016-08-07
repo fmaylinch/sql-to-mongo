@@ -69,6 +69,6 @@ public class Token implements Piece
 
     @Override
     public String toString() {
-        return type + " line:" + line + " idx:" + start + " " + string.replace("\n", "\\n");
+        return type.name().toLowerCase() + " `" + string.replace("\n", "\\n") + "` at position " + start + ", line " + (line+1);
     }
 }
