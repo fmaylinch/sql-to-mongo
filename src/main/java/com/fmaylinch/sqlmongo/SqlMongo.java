@@ -1,28 +1,21 @@
 package com.fmaylinch.sqlmongo;
 
-import com.codepoetics.protonpack.StreamUtils;
 import com.fmaylinch.sqlmongo.parser.SqlParser;
 import com.fmaylinch.sqlmongo.util.Fun;
 import com.fmaylinch.sqlmongo.util.MongoUtil;
 import com.mongodb.DB;
-import com.mongodb.DBCursor;
-import com.mongodb.DBObject;
-import com.opencsv.CSVWriter;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 public class SqlMongo {
 
@@ -43,7 +36,7 @@ public class SqlMongo {
 
 		DB db = MongoUtil.connectToDb(uri);
 
-		SqlParser.ParseResult result = new SqlParser(querySql, db).parse();
+		SqlParser.Result result = new SqlParser(querySql, db).parse();
 
 		printOutput(result, config);
 	}
@@ -74,7 +67,7 @@ public class SqlMongo {
 		return config;
 	}
 
-	private static void printOutput(SqlParser.ParseResult result, Properties config) throws IOException
+	private static void printOutput(SqlParser.Result result, Properties config) throws IOException
 	{
 		String output = config.getProperty("output");
 
@@ -85,28 +78,28 @@ public class SqlMongo {
 
 		switch (output) {
 			case "horizontal":
-				printCursorHorizontal(result.cursor, result.fields);
+				printResultHorizontal(result);
 				break;
 			case "vertical":
-				printCursorVertical(result.cursor, result.fields);
+				//printCursorVertical(result.cursor, result.fields);
 				break;
 			default:
-				printCursorToCsv(result.cursor, output, result.fields);
+				//printCursorToCsv(result.cursor, output, result.fields);
 				break;
 		}
 	}
 
-	private static void printCursorHorizontal(DBCursor cursor, Map<String, String> fields) {
+	private static void printResultHorizontal(SqlParser.Result result) {
 
-		System.out.println(StringUtils.join(Fun.map(fields.keySet(), f -> StringUtils.rightPad(f, padding)), ""));
+		System.out.println(StringUtils.join(Fun.map(result.fields.keySet(), f -> StringUtils.rightPad(f, padding)), ""));
 
-		MongoUtil.process(cursor, object -> {
-
-			List<String> values = extractValues(object, fields.values());
+		for (SqlParser.Result.Doc doc : result) {
+			List<String> values = extractValues(doc, result.fields.values());
 			System.out.println(StringUtils.join(Fun.map(values, f -> StringUtils.rightPad(f, padding)), ""));
-		});
+		}
 	}
 
+	/*
 	private static void printCursorVertical(DBCursor cursor, Map<String, String> fields) {
 
 		MongoUtil.process(cursor, object -> {
@@ -141,26 +134,11 @@ public class SqlMongo {
 		System.out.println("Done");
 
 	}
+    */
 
-	private static List<String> extractValues(DBObject object, Collection<String> fieldNames) {
-
-		return fieldNames.stream().map(f -> extractValue(object, f)).collect(Collectors.toList());
-	}
-
-	private static String extractValue(DBObject object, String fieldName)
+	private static List<String> extractValues(SqlParser.Result.Doc doc, Collection<String> fieldNames)
 	{
-		if (fieldName.contains(".")) {
-			String[] parts = fieldName.split("\\.");
-			for (int i = 0; i < parts.length - 1; i++) {
-				Object obj = object.get(parts[i]);
-				if (obj == null) return "";
-				if (!(obj instanceof DBObject)) throw new IllegalArgumentException("Field path is not right: " + fieldName);
-				object = (DBObject) obj;
-			}
-			fieldName = parts[parts.length-1];
-		}
-
-		return valueToString(object.get(fieldName));
+		return Fun.map(fieldNames, f -> valueToString(doc.getValue(f)));
 	}
 
 	private static String valueToString(Object value) {

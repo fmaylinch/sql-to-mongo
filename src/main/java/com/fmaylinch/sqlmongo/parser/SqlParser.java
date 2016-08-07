@@ -9,6 +9,7 @@ import com.mongodb.BasicDBObject;
 import com.mongodb.DB;
 import com.mongodb.DBCollection;
 import com.mongodb.DBCursor;
+import com.mongodb.DBObject;
 import com.mongodb.QueryOperators;
 import org.bson.types.ObjectId;
 
@@ -18,13 +19,12 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public class SqlParser {
-
-	private static final String ID = "_id";
 
 	private static List<SimpleDateFormat> dateFormats =
 			Arrays.asList(new SimpleDateFormat("yyyy-MM-dd"), new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"));
@@ -35,7 +35,7 @@ public class SqlParser {
 	/** Tokenizer used to parse the SQL query */
 	private Tokenizer tokenizer;
 
-	private ParseResult parseResult;
+	private Result result;
 
 
 	public SqlParser(String querySql, DB db) {
@@ -46,21 +46,36 @@ public class SqlParser {
 	/**
 	 * Parses the SQL query
 	 */
-	public ParseResult parse() {
+	public Result parse() {
 
-		parseResult = new ParseResult();
+		result = new Result();
 
 		tokenizer = new Tokenizer(querySql);
 		tokenizer.setKeywords(new HashSet<>(Arrays.asList(
-				"select", "from", "where", "as", "and", "limit", "order", "by", "asc", "desc")));
+				"select", "from", "where", "as", "and", "limit", "order", "by", "asc", "desc", "join", "on")));
 
 		final BasicDBObject select = parseSelect();
 
-		final DBCollection collection = parseFrom();
+		result.main = parseFrom();
 
-		final BasicDBObject query = parseWhere();
+		if (isNextToken(Type.KEYWORD, "join")) {
+			result.join = parseJoin();
+			result.join.fields = filterFields(select, result.join.collectionAlias);
+		}
 
-		parseResult.cursor = collection.find(query, select);
+		result.main.query = parseWhere();
+		result.main.fields = filterFields(select, result.main.collectionAlias);
+
+		if (result.join != null) {
+			// Include necessary fields used in join condition. TODO: clean this (well, and the whole thing!)
+			for (Object value : result.join.query.values()) {
+				if (value instanceof FieldReference) {
+					result.main.fields.append(((FieldReference) value).path, 1);
+				}
+			}
+		}
+
+		result.main.initCursor();
 
 		if (isNextTokenSkipIt(Type.KEYWORD, "order")) {
 			checkAndSkipNextToken(Type.KEYWORD, "by");
@@ -71,7 +86,7 @@ public class SqlParser {
 			parseLimit();
 		}
 
-		return parseResult;
+		return result;
 	}
 
 
@@ -89,42 +104,48 @@ public class SqlParser {
 			parseSelectField(select);
 		} while (isNextTokenSkipIt(Type.SYMBOL, ","));
 
-		// Exclude ID if not selected (mongo includes ID by default)
-		boolean excludeId = parseResult.fields.keySet().stream().noneMatch(f -> f.equals(ID));
-		if (excludeId) {
-			select.append(ID, 0);
-		}
-
 		return select;
 	}
 
-	private DBCollection parseFrom() {
+	private CollectionInfo parseFrom() {
 
 		checkAndSkipNextToken(Type.KEYWORD, "from");
 
-		String table = checkAndSkipNextToken(Type.IDENTIFIER).getString();
-		String alias = table;
+		return parseTableNameAndAlias();
+	}
 
-		if (isNextTokenSkipIt(Type.KEYWORD, "as")) {
-			alias = checkAndSkipNextToken(Type.IDENTIFIER).getString();
-		}
+	private CollectionInfo parseJoin() {
 
-		parseResult.tables.put(alias, table);
-		return db.getCollection(table);
+		checkAndSkipNextToken(Type.KEYWORD, "join");
+
+		CollectionInfo info = parseTableNameAndAlias();
+
+		checkAndSkipNextToken(Type.KEYWORD, "on");
+
+		info.query = parseConditions(true);
+
+		return info;
 	}
 
 	private BasicDBObject parseWhere()
 	{
-		BasicDBObject query = MongoUtil.obj();
-
 		if (isNextTokenSkipIt(Type.KEYWORD, "where"))
 		{
-			do {
-				Condition condition = parseCondition();
-				query.append(condition.path, condition.getMongoValue());
-
-			} while (isNextTokenSkipIt(Type.KEYWORD, "and"));
+			return parseConditions(false);
+		} else {
+			return MongoUtil.obj();
 		}
+	}
+
+	private BasicDBObject parseConditions(boolean allowPathValue)
+	{
+		BasicDBObject query = MongoUtil.obj();
+
+		do {
+			Condition condition = parseCondition(allowPathValue);
+			query.append(condition.path, condition.getMongoValue());
+
+		} while (isNextTokenSkipIt(Type.KEYWORD, "and"));
 
 		return query;
 	}
@@ -135,7 +156,7 @@ public class SqlParser {
 
 		do {
 
-			String path = consumeNextPath();
+			String path = parsePath();
 			int direction = 1; // asc by default
 			if (isNextTokenSkipIt(Type.KEYWORD, "asc")) {
 				direction = 1;
@@ -147,13 +168,13 @@ public class SqlParser {
 
 		} while (isNextTokenSkipIt(Type.SYMBOL, ","));
 
-		parseResult.cursor.sort(orders);
+		result.main.cursor.sort(orders);
 	}
 
 	private void parseLimit()
 	{
 		final Token numberToken = checkAndSkipNextToken(Type.NUMBER);
-		parseResult.cursor.limit(Integer.parseInt(numberToken.getString()));
+		result.main.cursor.limit(Integer.parseInt(numberToken.getString()));
 	}
 
 
@@ -161,7 +182,7 @@ public class SqlParser {
 
 	private void parseSelectField(BasicDBObject select) {
 
-		String path = consumeNextPath();
+		String path = parsePath();
 		String alias = path;
 
 		if (isNextTokenSkipIt(Type.KEYWORD, "as")) {
@@ -169,32 +190,66 @@ public class SqlParser {
 		}
 
 		select.append(path, 1);
-		parseResult.fields.put(alias, path);
+		result.fields.put(alias, path);
 	}
 
-	private Condition parseCondition()
+	private CollectionInfo parseTableNameAndAlias()
+	{
+		String table = checkAndSkipNextToken(Type.IDENTIFIER).getString();
+		String alias = table;
+
+		if (isNextTokenSkipIt(Type.KEYWORD, "as")) {
+			alias = checkAndSkipNextToken(Type.IDENTIFIER).getString();
+		}
+
+		final CollectionInfo colInfo = new CollectionInfo();
+		colInfo.collectionAlias = alias;
+		colInfo.collection = db.getCollection(table);
+		return colInfo;
+	}
+
+	/**
+	 * Returns an object containing only the fields that have the given alias prefix (the alias prefix is removed).
+	 */
+	private BasicDBObject filterFields(BasicDBObject object, String alias)
+	{
+		BasicDBObject result = MongoUtil.obj();
+
+		String aliasDot = alias + ".";
+
+		for (String field : object.keySet()) {
+			if (field.startsWith(aliasDot)) {
+				String fieldWithoutAlias = field.substring(aliasDot.length());
+				result.append(fieldWithoutAlias, object.get(field));
+			}
+		}
+		return result;
+	}
+
+	private Condition parseCondition(boolean allowPathValue)
 	{
 		Condition result = new Condition();
 
-		result.path = consumeNextPath();
+		result.path = parsePath();
 		result.operator = Operator.fromSqlOperator(checkAndSkipNextToken(Type.SYMBOL).getString());
-		result.value = parseValue();
+		result.value = parseValue(allowPathValue);
 
 		return result;
 	}
 
-	private Object parseValue() {
+	private Object parseValue(boolean allowPathValue) {
 
-		Token token = tokenizer.skipNextToken();
+		Token token = tokenizer.nextToken();
 
 		switch (token.getType()) {
-			case STRING: return token.getString();
-			case NUMBER: return Double.parseDouble(token.getString());
-			case BOOLEAN: return Boolean.parseBoolean(token.getString());
+			case STRING: return skipNextString();
+			case NUMBER: return Double.parseDouble(tokenizer.skipNextToken().getString());
+			case BOOLEAN: return Boolean.parseBoolean(tokenizer.skipNextToken().getString());
 			case IDENTIFIER:
 				switch (token.getString()) {
 					case "Date": return parseDateArgument();
 					case "Id": return parseIdArgument();
+					default: if (allowPathValue) return new FieldReference(parsePath());
 				}
 		}
 
@@ -203,8 +258,9 @@ public class SqlParser {
 
 	private Date parseDateArgument() {
 
+		checkAndSkipNextToken(Type.IDENTIFIER, "Date");
 		checkAndSkipNextToken(Type.SYMBOL, "(");
-		String dateStr = consumeNextString();
+		String dateStr = skipNextString();
 		checkAndSkipNextToken(Type.SYMBOL, ")");
 
 		try {
@@ -223,8 +279,9 @@ public class SqlParser {
 
 	private ObjectId parseIdArgument()
 	{
+		checkAndSkipNextToken(Type.IDENTIFIER, "Id");
 		checkAndSkipNextToken(Type.SYMBOL, "(");
-		String idStr = consumeNextString();
+		String idStr = skipNextString();
 		checkAndSkipNextToken(Type.SYMBOL, ")");
 		return new ObjectId(idStr);
 	}
@@ -232,13 +289,13 @@ public class SqlParser {
 
 	// Tokenizer helper methods
 
-	private String consumeNextString() {
+	private String skipNextString() {
 		String stringWithQuotes = checkAndSkipNextToken(Type.STRING).getString();
 		return stringWithQuotes.substring(1, stringWithQuotes.length()-1);
 	}
 
 	/** Joins next path made of IDENTIFIERs and dots like house.address.number */
-	public String consumeNextPath()
+	public String parsePath()
 	{
 		String result = checkAndSkipNextToken(Type.IDENTIFIER).getString();
 
@@ -333,13 +390,125 @@ public class SqlParser {
 		}
 	}
 
-	public static class ParseResult
+	public static class Result implements Iterable<Result.Doc>
 	{
 		/** Fields selected (keys are aliases) */
 		public Map<String, String> fields = new LinkedHashMap<>(); // To preserve insertion order
-		/** Tables used (keys are aliases) */
-		public Map<String, String> tables = new HashMap<>();
-		/** Cursor obtained after executing collection.find(query, fields) */
+
+		/** Main collection */
+		private CollectionInfo main;
+
+		/** Joined collection, for queries with join */
+		private CollectionInfo join;
+
+		public class Doc {
+
+			/** Objects indexed by collection alias */
+			private final Map<String, DBObject> objMap;
+
+			public Doc(Map<String, DBObject> objMap) {
+				this.objMap = objMap;
+			}
+
+			public Object getValue(String fieldPath)
+			{
+				String[] parts = fieldPath.split("\\.");
+
+				DBObject object = objMap.get(parts[0]);
+
+				for (int i = 1; i < parts.length - 1; i++) {
+					Object obj = object.get(parts[i]);
+					if (obj == null) return null;
+					if (!(obj instanceof DBObject)) throw new IllegalArgumentException("Field path is not right: " + fieldPath);
+					object = (DBObject) obj;
+				}
+
+				return object.get(parts[parts.length-1]);
+			}
+		}
+
+		private class ParseResultIterator implements Iterator<Doc>
+		{
+			private DBObject mainObj;
+			private DBObject joinObj;
+
+			@Override
+			public boolean hasNext() {
+				return main.cursor.hasNext() || hasNextJoinObject();
+			}
+
+			private boolean hasNextJoinObject() {
+				return join != null && join.cursor != null && join.cursor.hasNext();
+			}
+
+			@Override
+			public Doc next()
+			{
+				if (hasNextJoinObject()) {
+					joinObj = join.cursor.next();
+				} else {
+					mainObj = main.cursor.next();
+					if (join != null) {
+						join.initCursor(mainObj);
+						joinObj = join.cursor.hasNext() ? join.cursor.next() : MongoUtil.obj();
+					}
+				}
+
+				Map<String,DBObject> objMap = new HashMap<>();
+				objMap.put(main.collectionAlias, mainObj);
+				if (join != null) {
+					objMap.put(join.collectionAlias, joinObj);
+				}
+
+				return new Doc(objMap);
+			}
+		}
+
+		@Override
+		public Iterator<Doc> iterator() {
+			return new ParseResultIterator();
+		}
+	}
+
+	private static class CollectionInfo
+	{
 		public DBCursor cursor;
+		public DBCollection collection;
+		public String collectionAlias;
+		public BasicDBObject query;
+		public BasicDBObject fields;
+
+		public void initCursor() {
+			cursor = collection.find(query, fields);
+		}
+
+		public void initCursor(DBObject referred) {
+			DBObject populatedQuery = populateReferences(query, referred);
+			cursor = collection.find(populatedQuery, fields);
+		}
+
+		private DBObject populateReferences(BasicDBObject object, DBObject referred)
+		{
+			BasicDBObject result = MongoUtil.obj();
+			for (String field : object.keySet()) {
+				Object value = object.get(field);
+				if (value instanceof FieldReference) {
+					// TODO: we should do like Doc.getValue (split path)
+					result.append(field, referred.get(((FieldReference) value).path)); // Get referred value
+				} else {
+					result.append(field, object.get(field)); // Just copy value
+				}
+			}
+			return result;
+		}
+	}
+
+	private static class FieldReference {
+
+		public final String path;
+
+		public FieldReference(String path) {
+			this.path = path;
+		}
 	}
 }
