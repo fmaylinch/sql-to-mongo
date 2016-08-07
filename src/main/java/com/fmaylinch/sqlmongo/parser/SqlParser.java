@@ -32,80 +32,73 @@ public class SqlParser {
 	private final String querySql;
 	private final DB db;
 
-	/** Query used to find documents, obtained from the WHERE part */
-	private BasicDBObject query;
-	/** Field selection, obtained from the SELECT part */
-	private BasicDBObject select;
-	/** Fields selected (keys are aliases) */
-	private Map<String, String> fields = new LinkedHashMap<>(); // To preserve insertion order
-	/** Tables used (keys are aliases) */
-	private Map<String, String> tables = new HashMap<>();
-	/** Collection where to find documents, obtained from the FROM part */
-	private DBCollection collection;
-	/** Cursor obtained after executing collection.find(query, fields) */
-	private DBCursor cursor;
 	/** Tokenizer used to parse the SQL query */
 	private Tokenizer tokenizer;
+
+	private ParseResult parseResult;
+
 
 	public SqlParser(String querySql, DB db) {
 		this.querySql = querySql.trim();
 		this.db = db;
 	}
 
-	public DBCursor getCursor() {
-		return cursor;
-	}
-
-	public Map<String, String> getFields() {
-		return fields;
-	}
-
 	/**
-	 * After parsing you can get {@link #getCursor()} and {@link #getFields()}
+	 * Parses the SQL query
 	 */
-	public void parse() {
+	public ParseResult parse() {
+
+		parseResult = new ParseResult();
 
 		tokenizer = new Tokenizer(querySql);
-		tokenizer.setKeywords(new HashSet<>(Arrays.asList("select", "from", "where", "as", "and", "limit")));
+		tokenizer.setKeywords(new HashSet<>(Arrays.asList(
+				"select", "from", "where", "as", "and", "limit", "order", "by", "asc", "desc")));
 
-		parseSelect();
+		final BasicDBObject select = parseSelect();
 
-		parseFrom();
+		final DBCollection collection = parseFrom();
 
-		if (isNextTokenSkipIt(Type.KEYWORD, "where")) {
-			parseWhereConditions();
+		final BasicDBObject query = parseWhere();
+
+		parseResult.cursor = collection.find(query, select);
+
+		if (isNextTokenSkipIt(Type.KEYWORD, "order")) {
+			checkAndSkipNextToken(Type.KEYWORD, "by");
+			parseOrders();
 		}
-
-		cursor = collection.find(query, select);
 
 		if (isNextTokenSkipIt(Type.KEYWORD, "limit")) {
 			parseLimit();
 		}
+
+		return parseResult;
 	}
 
 
 	// Main parse groups
 
-	private void parseSelect() {
+	private BasicDBObject parseSelect() {
 
 		checkAndSkipNextToken(Type.KEYWORD, "select");
 
-		select = MongoUtil.obj();
+		BasicDBObject select = MongoUtil.obj();
 
-		if (isNextTokenSkipIt(Type.SYMBOL, "*")) return; // select all fields, so nothing else to do
+		if (isNextTokenSkipIt(Type.SYMBOL, "*")) return select;
 
 		do {
-			parseSelectField();
+			parseSelectField(select);
 		} while (isNextTokenSkipIt(Type.SYMBOL, ","));
 
 		// Exclude ID if not selected (mongo includes ID by default)
-		boolean excludeId = fields.keySet().stream().noneMatch(f -> f.equals(ID));
+		boolean excludeId = parseResult.fields.keySet().stream().noneMatch(f -> f.equals(ID));
 		if (excludeId) {
 			select.append(ID, 0);
 		}
+
+		return select;
 	}
 
-	private void parseFrom() {
+	private DBCollection parseFrom() {
 
 		checkAndSkipNextToken(Type.KEYWORD, "from");
 
@@ -116,32 +109,42 @@ public class SqlParser {
 			alias = checkAndSkipNextToken(Type.IDENTIFIER).getString();
 		}
 
-		collection = db.getCollection(table);
-		tables.put(alias, table);
+		parseResult.tables.put(alias, table);
+		return db.getCollection(table);
 	}
 
-	private void parseWhereConditions()
+	private BasicDBObject parseWhere()
 	{
-		query = MongoUtil.obj();
+		BasicDBObject query = MongoUtil.obj();
 
-		do {
-			Condition condition = parseCondition();
-			query.append(condition.path, condition.getMongoValue());
+		if (isNextTokenSkipIt(Type.KEYWORD, "where"))
+		{
+			do {
+				Condition condition = parseCondition();
+				query.append(condition.path, condition.getMongoValue());
 
-		} while (isNextTokenSkipIt(Type.KEYWORD, "and"));
+			} while (isNextTokenSkipIt(Type.KEYWORD, "and"));
+		}
+
+		return query;
 	}
 
-	private void parseLimit() {
+	private void parseOrders()
+	{
 
+	}
+
+	private void parseLimit()
+	{
 		final Token numberToken = checkAndSkipNextToken(Type.NUMBER);
-		cursor = cursor.limit(Integer.parseInt(numberToken.getString()));
+		parseResult.cursor = parseResult.cursor.limit(Integer.parseInt(numberToken.getString()));
 	}
 
 
 
 	// Piece parsing
 
-	private void parseSelectField() {
+	private void parseSelectField(BasicDBObject select) {
 
 		String path = consumeNextPath();
 		String alias = path;
@@ -151,7 +154,7 @@ public class SqlParser {
 		}
 
 		select.append(path, 1);
-		fields.put(alias, path);
+		parseResult.fields.put(alias, path);
 	}
 
 	private Condition parseCondition()
@@ -313,5 +316,15 @@ public class SqlParser {
 			}
 			throw new IllegalArgumentException("Operator not supported: " + sqlOp);
 		}
+	}
+
+	public static class ParseResult
+	{
+		/** Fields selected (keys are aliases) */
+		public Map<String, String> fields = new LinkedHashMap<>(); // To preserve insertion order
+		/** Tables used (keys are aliases) */
+		public Map<String, String> tables = new HashMap<>();
+		/** Cursor obtained after executing collection.find(query, fields) */
+		public DBCursor cursor;
 	}
 }

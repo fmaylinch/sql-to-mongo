@@ -43,10 +43,9 @@ public class SqlMongo {
 
 		DB db = MongoUtil.connectToDb(uri);
 
-		SqlParser parser = new SqlParser(querySql, db);
-		parser.parse();
+		SqlParser.ParseResult result = new SqlParser(querySql, db).parse();
 
-		printOutput(parser, config);
+		printOutput(result, config);
 	}
 
 	private static Properties setupConfig(String[] args)
@@ -69,33 +68,30 @@ public class SqlMongo {
 
 		dateFormat = new SimpleDateFormat(config.getProperty("dateFormat"));
 		nullValue = config.getProperty("nullValue");
-		String output = config.getProperty("output");
 		padding = Integer.parseInt(config.getProperty("padding"));
 		csvSeparator = config.getProperty("csvSeparator").charAt(0);
 
 		return config;
 	}
 
-	private static void printOutput(SqlParser parser, Properties config) throws IOException
+	private static void printOutput(SqlParser.ParseResult result, Properties config) throws IOException
 	{
 		String output = config.getProperty("output");
 
-		if (parser.getFields().isEmpty() && !output.equals("vertical")) {
+		if (result.fields.isEmpty() && !output.equals("vertical")) {
 			System.err.println("If you retrieve all fields you must use vertical output. Forcing vertical output.");
 			output = "vertical";
 		}
 
-		DBCursor cursor = parser.getCursor();
-
 		switch (output) {
 			case "horizontal":
-				printCursorHorizontal(cursor, parser.getFields());
+				printCursorHorizontal(result.cursor, result.fields);
 				break;
 			case "vertical":
-				printCursorVertical(cursor, parser.getFields());
+				printCursorVertical(result.cursor, result.fields);
 				break;
 			default:
-				printCursorToCsv(cursor, output, parser.getFields());
+				printCursorToCsv(result.cursor, output, result.fields);
 				break;
 		}
 	}
