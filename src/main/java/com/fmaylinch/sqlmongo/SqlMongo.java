@@ -28,7 +28,7 @@ public class SqlMongo {
 
 	private static DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	private static Pattern optionPattern = Pattern.compile("([a-zA-Z0-9]+)=(.+)");
-	private static int horizontalPadding;
+	private static int padding;
 	private static char csvSeparator;
 
 	public static void main(String[] args) throws IOException {
@@ -37,7 +37,7 @@ public class SqlMongo {
 		Properties config = new Properties();
 		config.setProperty("dateFormat", "yyyy-MM-dd HH:mm:ss");
 		config.setProperty("output", "horizontal"); // horizontal, vertical or directly a csv file name
-		config.setProperty("horizontalPadding", "40"); // only used for horizontal output
+		config.setProperty("padding", "40"); // only used for horizontal and vertical output
 		config.setProperty("csvSeparator", ","); // only used for csv output
 
 		try {
@@ -50,7 +50,7 @@ public class SqlMongo {
 
 		dateFormat = new SimpleDateFormat(config.getProperty("dateFormat"));
 		String output = config.getProperty("output");
-		horizontalPadding = Integer.parseInt(config.getProperty("horizontalPadding"));
+		padding = Integer.parseInt(config.getProperty("padding"));
 		csvSeparator = config.getProperty("csvSeparator").charAt(0);
 
 		String uri = getRequiredPropertyWithExample(config, "uri",
@@ -85,12 +85,12 @@ public class SqlMongo {
 
 	private static void printCursorHorizontal(DBCursor cursor, Map<String, String> fields) {
 
-		System.out.println(StringUtils.join(Fun.map(fields.keySet(), f -> StringUtils.rightPad(f, horizontalPadding)), ""));
+		System.out.println(StringUtils.join(Fun.map(fields.keySet(), f -> StringUtils.rightPad(f, padding)), ""));
 
 		MongoUtil.process(cursor, object -> {
 
 			List<String> values = extractValues(object, fields.values());
-			System.out.println(StringUtils.join(Fun.map(values, f -> StringUtils.rightPad(f, horizontalPadding)), ""));
+			System.out.println(StringUtils.join(Fun.map(values, f -> StringUtils.rightPad(f, padding)), ""));
 		});
 	}
 
@@ -103,7 +103,7 @@ public class SqlMongo {
 			List<String> values = extractValues(object, fieldNames);
 
 			List<String> fieldsAndValues = StreamUtils
-					.zip(fieldNames.stream(), values.stream(), (f, v) -> f + ": " + v)
+					.zip(fieldNames.stream(), values.stream(), (f, v) -> StringUtils.rightPad(f + ":", padding) + v)
 					.collect(Collectors.toList());
 
 			System.out.println(StringUtils.join(fieldsAndValues, "\n"));
