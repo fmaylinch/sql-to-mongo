@@ -1,11 +1,10 @@
 package com.fmaylinch.sqlmongo;
 
 import com.codepoetics.protonpack.StreamUtils;
-import com.fmaylinch.sqlmongo.util.Fun;
 import com.fmaylinch.sqlmongo.parser.SqlParser;
+import com.fmaylinch.sqlmongo.util.Fun;
 import com.fmaylinch.sqlmongo.util.MongoUtil;
 import com.mongodb.DB;
-import com.mongodb.DBCollection;
 import com.mongodb.DBCursor;
 import com.mongodb.DBObject;
 import com.opencsv.CSVWriter;
@@ -19,6 +18,7 @@ import java.text.SimpleDateFormat;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -60,46 +60,45 @@ public class SqlMongo {
 
 		DB db = MongoUtil.connectToDb(uri);
 
-		SqlParser.ParseResult result = new SqlParser(querySql).parse();
+		SqlParser parser = new SqlParser(querySql, db);
+		parser.parse();
 
-		if (result.fieldNames == null && !output.equals("vertical")) {
+		if (parser.getFields().isEmpty() && !output.equals("vertical")) {
 			System.err.println("If you retrieve all fields you must use vertical output. Forcing vertical output.");
 			output = "vertical";
 		}
 
-		DBCollection collection = db.getCollection(result.table);
-
-		DBCursor cursor = collection.find(result.query, result.fields);
+		DBCursor cursor = parser.getCursor();
 
 		switch (output) {
 			case "horizontal":
-				printCursorHorizontal(cursor, result.fieldNames);
+				printCursorHorizontal(cursor, parser.getFields());
 				break;
 			case "vertical":
-				printCursorVertical(cursor, result.fieldNames);
+				printCursorVertical(cursor, parser.getFields());
 				break;
 			default:
-				printCursorToCsv(cursor, output, result.fieldNames);
+				printCursorToCsv(cursor, output, parser.getFields());
 				break;
 		}
 	}
 
-	private static void printCursorHorizontal(DBCursor cursor, List<String> fieldNames) {
+	private static void printCursorHorizontal(DBCursor cursor, Map<String, String> fields) {
 
-		System.out.println(StringUtils.join(Fun.map(fieldNames, f -> StringUtils.rightPad(f, horizontalPadding)), ""));
+		System.out.println(StringUtils.join(Fun.map(fields.keySet(), f -> StringUtils.rightPad(f, horizontalPadding)), ""));
 
 		MongoUtil.process(cursor, object -> {
 
-			List<String> values = extractValues(object, fieldNames);
+			List<String> values = extractValues(object, fields.values());
 			System.out.println(StringUtils.join(Fun.map(values, f -> StringUtils.rightPad(f, horizontalPadding)), ""));
 		});
 	}
 
-	private static void printCursorVertical(DBCursor cursor, List<String> fieldNames0) {
+	private static void printCursorVertical(DBCursor cursor, Map<String, String> fields) {
 
 		MongoUtil.process(cursor, object -> {
 
-			Collection<String> fieldNames = fieldNames0 != null ? fieldNames0 : object.keySet();
+			Collection<String> fieldNames = !fields.isEmpty() ? fields.keySet() : object.keySet();
 
 			List<String> values = extractValues(object, fieldNames);
 
@@ -112,16 +111,16 @@ public class SqlMongo {
 		});
 	}
 
-	private static void printCursorToCsv(DBCursor cursor, String csvFile, List<String> fieldNames) throws IOException
+	private static void printCursorToCsv(DBCursor cursor, String csvFile, Map<String, String> fields) throws IOException
 	{
 		System.out.println("Writing output to CSV file: " + csvFile + " ...");
 		CSVWriter writer = new CSVWriter(new FileWriter(csvFile), csvSeparator);
 
-		writer.writeNext(toStringArray(fieldNames)); // header
+		writer.writeNext(toStringArray(fields.keySet())); // header
 
 		MongoUtil.process(cursor, object -> {
 
-			List<String> values = extractValues(object, fieldNames);
+			List<String> values = extractValues(object, fields.values());
 			writer.writeNext(toStringArray(values));
 		});
 
@@ -157,7 +156,7 @@ public class SqlMongo {
 		return value.toString();
 	}
 
-	private static String[] toStringArray(List<String> list) {
+	private static String[] toStringArray(Collection<String> list) {
 		return list.toArray(new String[list.size()]);
 	}
 
