@@ -131,15 +131,30 @@ public class SqlParser {
 
 	private void parseOrders()
 	{
+		BasicDBObject orders = MongoUtil.obj();
 
+		do {
+
+			String path = consumeNextPath();
+			int direction = 1; // asc by default
+			if (isNextTokenSkipIt(Type.KEYWORD, "asc")) {
+				direction = 1;
+			} else if (isNextTokenSkipIt(Type.KEYWORD, "desc")) {
+				direction = -1;
+			}
+
+			orders.append(path, direction);
+
+		} while (isNextTokenSkipIt(Type.SYMBOL, ","));
+
+		parseResult.cursor.sort(orders);
 	}
 
 	private void parseLimit()
 	{
 		final Token numberToken = checkAndSkipNextToken(Type.NUMBER);
-		parseResult.cursor = parseResult.cursor.limit(Integer.parseInt(numberToken.getString()));
+		parseResult.cursor.limit(Integer.parseInt(numberToken.getString()));
 	}
-
 
 
 	// Piece parsing

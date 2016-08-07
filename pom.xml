@@ -6,7 +6,7 @@
 
     <groupId>com.fmaylinch</groupId>
     <artifactId>sql-to-mongo</artifactId>
-    <version>0.1</version>
+    <version>0.2</version>
 
     <properties>
         <!-- use UTF-8 for everything -->
