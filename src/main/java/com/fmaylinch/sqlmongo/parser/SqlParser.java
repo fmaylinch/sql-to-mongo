@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class SqlParser {
@@ -55,15 +56,19 @@ public class SqlParser {
 		tokenizer.setKeywords(new HashSet<>(Arrays.asList(
 				"select", "from", "where", "as", "and", "limit", "order", "by", "asc", "desc", "join", "on")));
 
+		// SELECT
 		final BasicDBObject select = parseSelect();
 
+		// FROM
 		result.main = parseFrom();
 
+		// JOIN
 		if (isNextToken(Type.KEYWORD, "join")) {
 			result.join = parseJoin();
 			result.join.fields = filterFields(select, result.join.collectionAlias);
 		}
 
+		// WHERE
 		result.main.query = parseWhere();
 		result.main.fields = filterFields(select, result.main.collectionAlias);
 
@@ -78,11 +83,13 @@ public class SqlParser {
 
 		result.main.initCursor();
 
+		// ORDER BY
 		if (isNextTokenSkipIt(Type.KEYWORD, "order")) {
 			checkAndSkipNextToken(Type.KEYWORD, "by");
 			parseOrders();
 		}
 
+		// LIMIT
 		if (isNextTokenSkipIt(Type.KEYWORD, "limit")) {
 			parseLimit();
 		}
@@ -358,10 +365,11 @@ public class SqlParser {
 
 		public Object getMongoValue() {
 
-			if (operator == Operator.EQ) {
-				return value; // EQ has no mongo operator, just use value directly
-			} else {
-				return MongoUtil.obj(operator.mongoOperator, value);
+			switch (operator) {
+				case EQ: return value; // EQ has no mongo operator, just use value directly
+				case REGEX_EQ: return Pattern.compile((String) value);
+				case REGEX_EQ_CASE_INSENSITIVE: return Pattern.compile((String) value, Pattern.CASE_INSENSITIVE);
+				default: return MongoUtil.obj(operator.mongoOperator, value);
 			}
 		}
 	}
@@ -369,6 +377,8 @@ public class SqlParser {
 	enum Operator {
 
 		EQ("=", null),
+		REGEX_EQ("~=", null),
+		REGEX_EQ_CASE_INSENSITIVE("~~=", null),
 		NE("!=", QueryOperators.NE),
 		LT("<", QueryOperators.LT),
 		LTE("<=", QueryOperators.LTE),

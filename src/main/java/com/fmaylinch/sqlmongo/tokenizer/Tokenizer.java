@@ -45,7 +45,7 @@ public class Tokenizer {
     private Set<String> keywords = new HashSet<>();
     private Set<String> booleanKeywords = new HashSet<>(Arrays.asList("true", "false"));
     private String singleSymbols = "()[]{}:.,;!";
-    private String combinedSymbols = "+-*/%=<>&|";
+    private String combinedSymbols = "~+-*/%=<>&|";
 
     public Set<String> getKeywords() {
         return keywords;
