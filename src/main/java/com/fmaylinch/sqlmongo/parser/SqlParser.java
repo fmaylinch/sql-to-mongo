@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class SqlParser {
 
@@ -424,6 +425,14 @@ public class SqlParser {
 				}
 
 				return object.get(parts[parts.length-1]);
+			}
+
+			/** Gets all fields names, prefixed with the corresponding alias so they can be used in {@link #getValue(String)} */
+			public List<String> getFieldNames() {
+				return objMap.keySet().stream()
+						.flatMap(alias ->
+								objMap.get(alias).keySet().stream().map(k -> alias + "." + k))
+						.collect(Collectors.toList());
 			}
 		}
 

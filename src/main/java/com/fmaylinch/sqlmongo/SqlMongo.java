@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -105,17 +106,15 @@ public class SqlMongo {
 
 	private static void printResultVertical(SqlParser.Result result) {
 
-		// TODO: Doc should return all keys combined (from objects in objMap)
-		if (result.fields.isEmpty()) {
-			throw new IllegalArgumentException("Selecting all fields with `*` is not supported now");
-		}
-
 		for (SqlParser.Result.Doc doc : result) {
 
-			List<String> values = extractValues(doc, result.fields.values());
+			Collection<String> aliases = !result.fields.isEmpty() ? result.fields.keySet() : doc.getFieldNames();
+			Collection<String> fields = !result.fields.isEmpty() ? result.fields.values() : doc.getFieldNames();
+
+			List<String> values = extractValues(doc, fields);
 
 			List<String> fieldsAndValues = StreamUtils
-					.zip(result.fields.keySet().stream(), values.stream(), (f, v) -> StringUtils.rightPad(f + ":", padding) + v)
+					.zip(aliases.stream(), values.stream(), (f, v) -> StringUtils.rightPad(f + ":", padding) + v)
 					.collect(Collectors.toList());
 
 			System.out.println(StringUtils.join(fieldsAndValues, "\n"));
