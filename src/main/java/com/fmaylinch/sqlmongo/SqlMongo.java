@@ -1,12 +1,15 @@
 package com.fmaylinch.sqlmongo;
 
+import com.codepoetics.protonpack.StreamUtils;
 import com.fmaylinch.sqlmongo.parser.SqlParser;
 import com.fmaylinch.sqlmongo.util.Fun;
 import com.fmaylinch.sqlmongo.util.MongoUtil;
 import com.mongodb.DB;
+import com.opencsv.CSVWriter;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -16,6 +19,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class SqlMongo {
 
@@ -81,10 +85,10 @@ public class SqlMongo {
 				printResultHorizontal(result);
 				break;
 			case "vertical":
-				//printCursorVertical(result.cursor, result.fields);
+				printResultVertical(result);
 				break;
 			default:
-				//printCursorToCsv(result.cursor, output, result.fields);
+				printResultToCsv(result, output);
 				break;
 		}
 	}
@@ -99,42 +103,43 @@ public class SqlMongo {
 		}
 	}
 
-	/*
-	private static void printCursorVertical(DBCursor cursor, Map<String, String> fields) {
+	private static void printResultVertical(SqlParser.Result result) {
 
-		MongoUtil.process(cursor, object -> {
+		// TODO: Doc should return all keys combined (from objects in objMap)
+		if (result.fields.isEmpty()) {
+			throw new IllegalArgumentException("Selecting all fields with `*` is not supported now");
+		}
 
-			Collection<String> fieldNames = !fields.isEmpty() ? fields.keySet() : object.keySet();
+		for (SqlParser.Result.Doc doc : result) {
 
-			List<String> values = extractValues(object, fieldNames);
+			List<String> values = extractValues(doc, result.fields.values());
 
 			List<String> fieldsAndValues = StreamUtils
-					.zip(fieldNames.stream(), values.stream(), (f, v) -> StringUtils.rightPad(f + ":", padding) + v)
+					.zip(result.fields.keySet().stream(), values.stream(), (f, v) -> StringUtils.rightPad(f + ":", padding) + v)
 					.collect(Collectors.toList());
 
 			System.out.println(StringUtils.join(fieldsAndValues, "\n"));
 			System.out.println();
-		});
+		}
 	}
 
-	private static void printCursorToCsv(DBCursor cursor, String csvFile, Map<String, String> fields) throws IOException
+	private static void printResultToCsv(SqlParser.Result result, String csvFile) throws IOException
 	{
 		System.out.println("Writing output to CSV file: " + csvFile + " ...");
 		CSVWriter writer = new CSVWriter(new FileWriter(csvFile), csvSeparator);
 
-		writer.writeNext(toStringArray(fields.keySet())); // header
+		writer.writeNext(toStringArray(result.fields.keySet())); // header
 
-		MongoUtil.process(cursor, object -> {
+		for (SqlParser.Result.Doc doc : result) {
 
-			List<String> values = extractValues(object, fields.values());
+			List<String> values = extractValues(doc, result.fields.values());
 			writer.writeNext(toStringArray(values));
-		});
+		}
 
 		writer.close();
 		System.out.println("Done");
 
 	}
-    */
 
 	private static List<String> extractValues(SqlParser.Result.Doc doc, Collection<String> fieldNames)
 	{
