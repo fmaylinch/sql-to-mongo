@@ -255,8 +255,8 @@ public class SqlParser {
 			case BOOLEAN: return Boolean.parseBoolean(tokenizer.skipNextToken().getString());
 			case IDENTIFIER:
 				switch (token.getString()) {
-					case "Date": return parseDateArgument();
-					case "Id": return parseIdArgument();
+					case "DATE": tokenizer.skipNextToken(); return parseDateArgument(skipNextString());
+					case "OID": tokenizer.skipNextToken(); return new ObjectId(skipNextString());
 					default: if (allowPathValue) return new FieldReference(parsePath());
 				}
 		}
@@ -264,12 +264,7 @@ public class SqlParser {
 		throw new IllegalArgumentException("Unexpected value: " + token);
 	}
 
-	private Date parseDateArgument() {
-
-		checkAndSkipNextToken(Type.IDENTIFIER, "Date");
-		checkAndSkipNextToken(Type.SYMBOL, "(");
-		String dateStr = skipNextString();
-		checkAndSkipNextToken(Type.SYMBOL, ")");
+	private Date parseDateArgument(String dateStr) {
 
 		try {
 			for (SimpleDateFormat dateFormat : dateFormats) {
@@ -283,15 +278,6 @@ public class SqlParser {
 
 		throw new IllegalArgumentException("Unsupported date: " + dateStr
 				+ " (available formats: " + Fun.map(dateFormats, f -> f.toPattern()) + ")");
-	}
-
-	private ObjectId parseIdArgument()
-	{
-		checkAndSkipNextToken(Type.IDENTIFIER, "Id");
-		checkAndSkipNextToken(Type.SYMBOL, "(");
-		String idStr = skipNextString();
-		checkAndSkipNextToken(Type.SYMBOL, ")");
-		return new ObjectId(idStr);
 	}
 
 
@@ -377,8 +363,8 @@ public class SqlParser {
 	enum Operator {
 
 		EQ("=", null),
-		REGEX_EQ("~=", null),
-		REGEX_EQ_CASE_INSENSITIVE("~~=", null),
+		REGEX_EQ("~", null),
+		REGEX_EQ_CASE_INSENSITIVE("~*", null),
 		NE("!=", QueryOperators.NE),
 		LT("<", QueryOperators.LT),
 		LTE("<=", QueryOperators.LTE),
